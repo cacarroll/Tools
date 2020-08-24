@@ -120,8 +120,6 @@ Function Start-AzCopySync
                 $Context = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountKey
                 $SASURI = New-AzStorageContainerSASToken -Context $Context -ExpiryTime(get-date).AddHours(1) -FullUri -Name $ContainerName -Permission rwld
 
-                $SASURI = New-AzStorageContainerSASToken -Context $Context -StartTime $startDate -ExpiryTime $expiryDate -FullUri -Name $ContainerName -Permission rwl
-                write-Output $DestStorageAccountName
                 Write-Output $SasUri
             }
         }
@@ -145,12 +143,12 @@ Function Start-AzCopySync
         if ($deleteDestination)
         {
             Write-Output "Starting AzCopy syncronization and will delete destiation if files were upated/deleted in source"
-            .\azcopy.exe sync $sourceSASUri $destSASUri -delete-destination=true
+            .\azcopy.exe sync $sourceSASUri $destSASUri --delete-destination=true
         }
         else
         {
             Write-Output "Starting AzCopy syncronization and will NOT delete destiation if files were upated/deleted in source"
-            .\azcopy.exe sync $sourceSASUri $destSASUri -delete-destination=false
+            .\azcopy.exe sync $sourceSASUri $destSASUri --delete-destination=false
         }
     }
 }
