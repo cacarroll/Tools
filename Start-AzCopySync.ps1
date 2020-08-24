@@ -75,7 +75,11 @@ Function Start-AzCopySync
 
         [Parameter(Mandatory=$true, HelpMessage="Specify the destination storage container name.")]
         [string]
-        $DestContainerName
+        $DestContainerName,
+
+        [Parameter(HelpMessage="Deletes the files/folders in destination if there don't exist in source.")]
+        [switch]
+        $DeleteDestination
     )
     Process
     {
