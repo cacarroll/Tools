@@ -109,11 +109,11 @@ Function New-EmptyFile {
     New-Item -path $env:tmp -Name empty.txt
 
     foreach ($emptyFolder in $emptyFolders) {
-        Write-Output "Creating empty.txt on $StorageAccountName/$EmptyFolder"
-        az storage blob upload-batch --destination "$shareName/$emptyFolder" --source "C:\tmp" --pattern "empty.txt" --account-name $StorageAccountName --connection-string $ConnectionString
+        Write-Output "Creating empty.txt on $StorageAccountName/$shareName/$EmptyFolder"
+        az storage blob upload-batch --destination "$shareName/$emptyFolder" --source $env:tmp --pattern "empty.txt" --account-name $StorageAccountName --connection-string $ConnectionString
     }
 
-    Remove-Item "$env:temp\empty.txt"
+    Remove-Item "$env:tmp\empty.txt"
 }
 
 
