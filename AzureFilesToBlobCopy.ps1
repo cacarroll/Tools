@@ -132,6 +132,7 @@ $SourceStorageAccountConnectionString = $(az storage account show-connection-str
 $fileShares = $(az storage share list --connection-string $sourceStorageAccountConnectionString --query "[].{name:name}") | ConvertFrom-Json
 
 foreach ($fileShare in $fileShares.name) {
+    Write-Output "Processing fileshare $fileshare"
     $fileShareSasUri = Get-FileShareSASUri -StorageAccountName $SourceStorageAccountName -ShareName $fileShare
 
     # Map a local drive to the file share unc
@@ -144,7 +145,7 @@ foreach ($fileShare in $fileShares.name) {
     Select-AzSubscription -Name $DestinationSubscriptionName
     
     # Mirror fileshare name to blob containers 
-    Write-Output "Creating blob container $fileshare on storage account $DestinationStorageAccountName"
+    Write-Output "`nCreating blob container $fileshare on storage account $DestinationStorageAccountName"
     $DestinationStorageAccountConnectionString = $(az storage account show-connection-string --name $DestinationStorageAccountName --resource-group $DestinationResourceGroupName -o tsv)
     az storage container create --name $fileShare --account-name $DestinationStorageAccountName --connection-string $DestinationStorageAccountConnectionString
     
@@ -153,6 +154,7 @@ foreach ($fileShare in $fileShares.name) {
 
     $blobContainerSasUri = Get-BlobContainerSasUri -StorageAccountName $DestinationStorageAccountName -containerName $fileshare
   
+    Write-Output "`nUsing Azcopy to copy files from $fileshare on $sourceStorageAccountName to $DestinationStorageAccountName"
     $env:AZCOPY_CONCURRENCY_VALUE = "AUTO"
     .\azcopy.exe cp $fileShareSasUri $blobContainerSasUri --from-to=FileBlob --s2s-preserve-access-tier=false --check-length=true --include-directory-stub=false --s2s-preserve-blob-tags=false --recursive
     $env:AZCOPY_CONCURRENCY_VALUE = ""
