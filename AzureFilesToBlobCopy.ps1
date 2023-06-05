@@ -19,7 +19,6 @@ function Set-AzSubscription {
 }
 
 
-
 function Map-Drive {
     [CmdletBinding()]
     param (
@@ -88,7 +87,6 @@ function Get-FileShareSASUri {
     }
 }
 
-
 function Get-BlobContainerSASUri {
     [CmdletBinding()]
     param (
@@ -98,9 +96,9 @@ function Get-BlobContainerSASUri {
 
     $Expiry = (Get-Date).AddDays(1).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-    $StorageKey = $(az storage account keys list --account-name $StorageAccountName --query "[?keyName=='key1'].value" --output tsv)
+    $StorageKey = $(az storage account keys list --account-name $StorageAccountName --query "[0].value" --output tsv)
     
-    $SasToken = $(az storage container generate-sas --account-name $StorageAccountName --account-key $StorageKey --name $ContainerName --permissions racwdl --expiry $Expiry --output tsv)
+    $SasToken = $(az storage container generate-sas --account-name $StorageAccountName --account-key $StorageKey --name $ContainerName --permissions rwl --expiry $Expiry --output tsv)
 
     $BlobEndpoint = $(az storage account show --name $StorageAccountName --query "primaryEndpoints.blob" --output tsv)
 
@@ -108,6 +106,7 @@ function Get-BlobContainerSASUri {
 
     return $BlobContainerSasUri
 }
+
 
 function Get-EmptyFolder {
     param (
@@ -196,45 +195,46 @@ try {
 
     $folder = $driveLetter + ":\" + $StorageMapping.Source.Folder
     Write-Output "`n`nRetrieving parent folders on $folder. Please be patient..."
-    $root = [System.IO.DirectoryInfo]::new($folder)
-    $folders = $root.GetDirectories("*", [System.IO.SearchOption]::AllDirectories)
+    # $root = [System.IO.DirectoryInfo]::new($folder)
+    # $folders = $root.GetDirectories("*", [System.IO.SearchOption]::AllDirectories)
 
-    $emptyFolders = @()
-    $totalFolders = $folders.Count
-    $currentFolder = 0
+    # $emptyFolders = @()
+    # $totalFolders = $folders.Count
+    # $currentFolder = 0
 
-    foreach ($subfolder in $folders) {
-        $currentFolder++
-        Write-Output "`nScanning $($subfolder.FullName) for emptiness"
-        Write-Progress -Activity "Scanning" -Status "Processing folder $currentFolder of $totalFolders" -PercentComplete (($currentFolder/$totalFolders)*100)
+    # foreach ($subfolder in $folders) {
+    #     $currentFolder++
+    #     Write-Output "`nScanning $($subfolder.FullName) for emptiness"
+    #     Write-Progress -Activity "Scanning" -Status "Processing folder $currentFolder of $totalFolders" -PercentComplete (($currentFolder/$totalFolders)*100)
 
-        $result = Get-EmptyFolder -Path $subfolder.FullName
-        if ($result) {
-            Write-Output "`nFound empty folder at $($subfolder.FullName)"
-            $emptyFolders += $result
-        }
-    }
+    #     $result = Get-EmptyFolder -Path $subfolder.FullName
+    #     if ($result) {
+    #         Write-Output "`nFound empty folder at $($subfolder.FullName)"
+    #         $emptyFolders += $result
+    #     }
+    # }
 
-    $FileShareSasUri = Get-FileShareSASUri -StorageAccountName $StorageMapping.Source.StorageAccountName -ShareName ($StorageMapping.Source.Folder).Replace("\","/")
+    #Retreive FileShare SASUri
+    $FileShareName = $StorageMapping.Source.FileShareName + "/" + ($StorageMapping.Source.Folder).Replace("\","/")
+    $FileShareSasUri = Get-FileShareSASUri -StorageAccountName $StorageMapping.Source.StorageAccountName -ShareName $FileShareName
 
-    #### Destination Processing
+    #### Destination Processing ####
     Set-AzSubscription -SubscriptionId $StorageMapping.Destination.SubscriptionId
     
-    $path = $StorageMapping.Destination.FolderMapping[$folder]
+    Write-Output "Creating blob container [$DestinationBlobContainer] on storage account $($StorageMapping.Destination.StorageAccountName)"
     $DestinationBlobContainer = $StorageMapping.Destination.BlobContainerName
-
-    Write-Verbose "Creating blob container [$DestinationBlobContainer] on storage account $($StorageMapping.Destination.StorageAccountName)"
     $DestinationStorageAccountConnectionString = $(az storage account show-connection-string --name $StorageMapping.Destination.StorageAccountName --resource-group $StorageMapping.Destination.ResourceGroupName -o tsv)
     az storage container create --name $DestinationBlobContainer --account-name $StorageMapping.Destination.StorageAccountName --connection-string $DestinationStorageAccountConnectionString
     
-    $ShareName = "$DestinationBlobContainer\$path\$newReleaseFormat"
-    New-EmptyFile -StorageAccountName $StorageMapping.Destination.StorageAccountName -ResourceGroupName $StorageMapping.Destination.ResourceGroupName -EmptyFolders $EmptyFolders -ShareName $ShareName
+    $path = $StorageMapping.Destination.FolderMapping[$StorageMapping.Source.Folder]
+    $BlobShareName = "$DestinationBlobContainer\$path".Replace("\","/")
+    # New-EmptyFile -StorageAccountName $StorageMapping.Destination.StorageAccountName -ResourceGroupName $StorageMapping.Destination.ResourceGroupName -EmptyFolders $EmptyFolders -ShareName $BlobShareName
+    
+    $BlobContainerSasUri = Get-BlobContainerSASUri -StorageAccountName $StorageMapping.Destination.StorageAccountName -ContainerName $BlobShareName
 
-    $BlobContainerSasUri = Get-BlobContainerSASUri -StorageAccountName $StorageMapping.Destination.StorageAccountName -ContainerName $DestinationBlobContainer
-
-    Write-Verbose "Using AzCopy to copy files from $($StorageMapping.Source.StorageAccountName)/$folder to $($StorageMapping.Destination.StorageAccountName)/$DestinationBlobContainer"
+    Write-Output "`nUsing AzCopy to copy files from $FileShareName to $BlobShareName"
     $env:AZCOPY_CONCURRENCY_VALUE = "AUTO"
-    .\azcopy.exe cp $FileShareSasUri $BlobContainerSasUri --from-to=FileBlob --s2s-preserve-access-tier=false --check-length=true --recursive        
+    .\azcopy.exe cp $FileShareSasUri $BlobContainerSasUri --from-to=FileBlob --s2s-preserve-access-tier=false --check-length=true --recursive --log-level=INFO     
     # $env:AZCOPY_CONCURRENCY_VALUE = ""
 
     Remove-PSDrive -Name $DriveLetter
