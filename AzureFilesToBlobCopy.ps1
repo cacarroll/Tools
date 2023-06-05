@@ -234,7 +234,7 @@ try {
     
     $BlobContainerSasUri = Get-BlobContainerSASUri -StorageAccountName $StorageMapping.Destination.StorageAccountName -ContainerName $StorageMapping.Destination.BlobContainerName -BlobFolderPath $BlobFolderPath
 
-    Write-Output "`nUsing AzCopy to copy files from $FileShareName to $BlobShareName"
+    Write-Output "`nUsing AzCopy to copy files from $($StorageMapping.Source.StorageAccountName) to $($StorageMapping.Destination.StorageAccountName)"
     $env:AZCOPY_CONCURRENCY_VALUE = "AUTO"
     .\azcopy.exe cp $FileShareSasUri $BlobContainerSasUri --from-to=FileBlob --s2s-preserve-access-tier=false --check-length=true --recursive --log-level=INFO     
     # $env:AZCOPY_CONCURRENCY_VALUE = ""
