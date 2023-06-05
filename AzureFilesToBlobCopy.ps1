@@ -65,7 +65,8 @@ function Get-FileShareSASUri {
     [CmdletBinding()]
     param (
         $StorageAccountName,
-        $ShareName
+        $ShareName,
+        $FolderPath
     )
     
     try {
@@ -73,11 +74,11 @@ function Get-FileShareSASUri {
 
         $StorageKey = $(az storage account keys list --account-name $StorageAccountName --query "[?keyName=='key1'].value" --output tsv)
         
-        $SasToken = $(az storage share generate-sas -n $ShareName --account-name $StorageAccountName --account-key $StorageKey --https-only --permissions dlrw --expiry $Expiry -o tsv)
+        $SasToken = $(az storage share generate-sas -n $ShareName --account-name $StorageAccountName --account-key $StorageKey --https-only --permissions lr --expiry $Expiry -o tsv)
 
         $FileShareEndpoint = $(az storage account show --name $StorageAccountName --query "primaryEndpoints.file" --output tsv)
 
-        $FileShareSasUri = "$FileShareEndpoint$ShareName/?$SasToken"
+        $FileShareSasUri = "$FileShareEndpoint$ShareName/$FolderPath/*?$SasToken"
 
         return $FileShareSasUri
     }
@@ -91,7 +92,8 @@ function Get-BlobContainerSASUri {
     [CmdletBinding()]
     param (
         $StorageAccountName,
-        $ContainerName
+        $ContainerName,
+        $BlobFolderPath
     )
 
     $Expiry = (Get-Date).AddDays(1).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -102,7 +104,7 @@ function Get-BlobContainerSASUri {
 
     $BlobEndpoint = $(az storage account show --name $StorageAccountName --query "primaryEndpoints.blob" --output tsv)
 
-    $BlobContainerSasUri = "$BlobEndpoint$ContainerName/?$SasToken"
+    $BlobContainerSasUri = "$BlobEndpoint$ContainerName/$BlobFolderPath/?$SasToken"
 
     return $BlobContainerSasUri
 }
@@ -126,7 +128,7 @@ function Get-EmptyFolder {
 }
 
 function Get-NextAvailableDriveLetter {
-    $driveLetters = [char[]]('D'..'Z')
+    $driveLetters = [char[]]('F'..'Z')
     foreach ($letter in $driveLetters) {
         if (!(Test-Path -Path "$letter`:\")) {
             return $letter
@@ -141,29 +143,31 @@ function New-EmptyFile {
         $StorageAccountName,
         $ResourceGroupName,
         $EmptyFolders,
-        $ShareName
+        $ShareName,
+        $ContainerName
     )
 
     $ShareName = $ShareName.Replace("\","/")
     $ConnectionString = $(az storage account show-connection-string --name $StorageAccountName --resource-group $ResourceGroupName -o tsv)
+    $EmptyFile = Join-Path $env:TEMP -ChildPath "empty.txt"
 
-    New-Item -Path $env:TEMP -Name empty.txt -Force | Out-Null
+    New-Item -Path $EmptyFile -Force | Out-Null
 
     foreach ($EmptyFolder in $EmptyFolders) {
         $path = $EmptyFolder.replace("\","/")
-        Write-Output "Creating empty.txt on $StorageAccountName/$ShareName/$path"
-        az storage blob upload-batch --destination "$ShareName/$EmptyFolder" --source $env:TEMP --pattern "empty.txt" --account-name $StorageAccountName --connection-string $ConnectionString
+        Write-Output "Creating empty.txt on $StorageAccountName/$ContainerName/$ShareName/$path"
+        az storage blob upload-batch --destination "$containerName/$ShareName/$EmptyFolder" --source $env:TEMP --pattern "empty.txt" --account-name $StorageAccountName --connection-string $ConnectionString
     }
 
-    Remove-Item "$env:TEMP\empty.txt"
+    Remove-Item $EmptyFile
 }
 
 
 Write-Host "`n************ Start copy from Azure File Share to Azure Blob Container *******************" -ForegroundColor Cyan
 
 # Convert Release Date to New Format
-$quarter, $year = $Release -split 'Q'
-$newReleaseFormat = "FY20$year\$quarter" + 'Q'
+# $quarter, $year = $Release -split 'Q'
+# $newReleaseFormat = "FY20$year\$quarter" + 'Q'
 
 $StorageMapping = @{
     Source = @{
@@ -176,11 +180,11 @@ $StorageMapping = @{
     }
     Destination = @{
         SubscriptionId      = '16d23ae1-53e7-474f-8f46-373c815cbb01'
-        StorageAccountName  = 'releasestorage01'
+        StorageAccountName  = 'releasestorage02'
         ResourceGroupName   = 'MNR-Storage-RG'
         BlobContainerName   = 'otm'
         FolderMapping = @{
-            "Released\$Release" = $newReleaseFormat
+            "Released\$Release" = $Release
         }
     }
 }
@@ -195,28 +199,27 @@ try {
 
     $folder = $driveLetter + ":\" + $StorageMapping.Source.Folder
     Write-Output "`n`nRetrieving parent folders on $folder. Please be patient..."
-    # $root = [System.IO.DirectoryInfo]::new($folder)
-    # $folders = $root.GetDirectories("*", [System.IO.SearchOption]::AllDirectories)
+    $root = [System.IO.DirectoryInfo]::new($folder)
+    $folders = $root.GetDirectories("*", [System.IO.SearchOption]::AllDirectories)
 
-    # $emptyFolders = @()
-    # $totalFolders = $folders.Count
-    # $currentFolder = 0
+    $emptyFolders = @()
+    $totalFolders = $folders.Count
+    $currentFolder = 0
 
-    # foreach ($subfolder in $folders) {
-    #     $currentFolder++
-    #     Write-Output "`nScanning $($subfolder.FullName) for emptiness"
-    #     Write-Progress -Activity "Scanning" -Status "Processing folder $currentFolder of $totalFolders" -PercentComplete (($currentFolder/$totalFolders)*100)
+    foreach ($subfolder in $folders) {
+        $currentFolder++
+        Write-Output "`nScanning $($subfolder.FullName) for emptiness"
+        Write-Progress -Activity "Scanning" -Status "Processing folder $currentFolder of $totalFolders" -PercentComplete (($currentFolder/$totalFolders)*100)
 
-    #     $result = Get-EmptyFolder -Path $subfolder.FullName
-    #     if ($result) {
-    #         Write-Output "`nFound empty folder at $($subfolder.FullName)"
-    #         $emptyFolders += $result
-    #     }
-    # }
+        $result = Get-EmptyFolder -Path $subfolder.FullName
+        if ($result) {
+            Write-Output "`nFound empty folder at $($subfolder.FullName)"
+            $emptyFolders += $result
+        }
+    }
 
     #Retreive FileShare SASUri
-    $FileShareName = $StorageMapping.Source.FileShareName + "/" + ($StorageMapping.Source.Folder).Replace("\","/")
-    $FileShareSasUri = Get-FileShareSASUri -StorageAccountName $StorageMapping.Source.StorageAccountName -ShareName $FileShareName
+    $FileShareSasUri = Get-FileShareSASUri -StorageAccountName $StorageMapping.Source.StorageAccountName -ShareName $StorageMapping.Source.FileShareName -FolderPath $StorageMapping.Source.Folder
 
     #### Destination Processing ####
     Set-AzSubscription -SubscriptionId $StorageMapping.Destination.SubscriptionId
@@ -226,11 +229,10 @@ try {
     $DestinationStorageAccountConnectionString = $(az storage account show-connection-string --name $StorageMapping.Destination.StorageAccountName --resource-group $StorageMapping.Destination.ResourceGroupName -o tsv)
     az storage container create --name $DestinationBlobContainer --account-name $StorageMapping.Destination.StorageAccountName --connection-string $DestinationStorageAccountConnectionString
     
-    $path = $StorageMapping.Destination.FolderMapping[$StorageMapping.Source.Folder]
-    $BlobShareName = "$DestinationBlobContainer\$path".Replace("\","/")
-    # New-EmptyFile -StorageAccountName $StorageMapping.Destination.StorageAccountName -ResourceGroupName $StorageMapping.Destination.ResourceGroupName -EmptyFolders $EmptyFolders -ShareName $BlobShareName
+    $BlobFolderPath = ($StorageMapping.Destination.FolderMapping[$StorageMapping.Source.Folder]).Replace("\","/")
+    New-EmptyFile -StorageAccountName $StorageMapping.Destination.StorageAccountName -ResourceGroupName $StorageMapping.Destination.ResourceGroupName -EmptyFolders $EmptyFolders -ShareName $BlobFolderPath -ContainerName $StorageMapping.Destination.BlobContainerName
     
-    $BlobContainerSasUri = Get-BlobContainerSASUri -StorageAccountName $StorageMapping.Destination.StorageAccountName -ContainerName $BlobShareName
+    $BlobContainerSasUri = Get-BlobContainerSASUri -StorageAccountName $StorageMapping.Destination.StorageAccountName -ContainerName $StorageMapping.Destination.BlobContainerName -BlobFolderPath $BlobFolderPath
 
     Write-Output "`nUsing AzCopy to copy files from $FileShareName to $BlobShareName"
     $env:AZCOPY_CONCURRENCY_VALUE = "AUTO"
