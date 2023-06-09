@@ -1,0 +1,47 @@
+jobs:
+- job: Step1
+  displayName: 'Retrieve Principal ID and Secret from Key Vault 1'
+  pool:
+    vmImage: 'windows-latest'
+  steps:
+  - task: AzureKeyVault@2
+    displayName: 'Download Secrets from Key Vault 1'
+    inputs:
+      azureSubscription: 'subscription1'
+      keyVaultName: 'keyvault1'
+      secretsFilter: '*'
+
+- job: Step2
+  displayName: 'Retrieve Principal ID and Secret from Key Vault 2'
+  dependsOn: Step1
+  pool:
+    vmImage: 'windows-latest'
+  steps:
+  - task: AzureKeyVault@2
+    displayName: 'Download Secrets from Key Vault 2'
+    inputs:
+      azureSubscription: 'Mission Network Subscription'
+      keyVaultName: 'Mission Network Releases (AB)'
+      secretsFilter: '*'
+
+- job: Step3
+  displayName: 'Azure File to Blob Copy'
+  dependsOn: Step2
+  pool:
+    vmImage: 'windows-latest'
+  steps:
+  - checkout: self
+  - task: AzureCLI@2
+    displayName: 'Get Tenant ID'
+    inputs:
+      azureSubscription: 'subscription1'
+      scriptType: 'pscore'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        $tenantId = az account show --query 'tenantId' -o tsv
+        echo "##vso[task.setvariable variable=TENANT_ID]$tenantId"
+  - task: PowerShell@2
+    displayName: 'Azure File to Blob'
+    inputs:
+      filePath: 'AzureFilesToBlobCopy.ps1'
+      arguments: '-PrincipalId1 $(principalId1) -Secret1 $(secret1) -PrincipalId2 $(principalId2) -Secret2 $(secret2) -TenantId $(TENANT_ID)''

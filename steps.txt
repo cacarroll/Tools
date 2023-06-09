@@ -1,0 +1,8 @@
+1. Retreive principal / secrets from Keyvault
+2. Login to subscription
+3. retrieve empty folders and sas uri.  Return both as variables.
+
+------ Second subscription -------
+4. Retreive principal / secrets from Keyvault
+5. Login to subscription
+6. 
